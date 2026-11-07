@@ -1,28 +1,66 @@
 @echo off
-setlocal
-set MINGW=D:\mingw64\bin
-set TARGET=HardwareMonitor.exe
+REM ===========================================================================
+REM  HardwareMonitorBall - one-click build (CMake + MinGW-w64).
+REM
+REM  Requirements for building from source:
+REM    * CMake  (on PATH, or set CMAKE=<path\to\cmake.exe>)
+REM    * MinGW-w64 (g++.exe / mingw32-make.exe on PATH)
+REM  A git-ignored ".build.local.bat" next to this script may pre-set CMAKE /
+REM  CXX for convenience; it is never part of the release.
+REM
+REM  Keep this file CRLF + ASCII only.
+REM ===========================================================================
+setlocal enabledelayedexpansion
+cd /d "%~dp0"
 
-echo [1/3] make icon
-if exist "D:\My_programs\.venv\Scripts\python.exe" (
-  "D:\My_programs\.venv\Scripts\python.exe" tools\make_icon.py
+if exist "%~dp0.build.local.bat" call "%~dp0.build.local.bat"
+
+if not defined CMAKE (
+  where cmake >nul 2>nul && set "CMAKE=cmake"
+)
+if not defined CMAKE (
+  echo [ERROR] CMake was not found.
+  echo   Install CMake (https://cmake.org/download) and add it to PATH,
+  echo   or set the CMAKE environment variable to its executable.
+  exit /b 1
 )
 
-echo [2/3] windres app.rc  -^>  app_res.o
-"%MINGW%\windres.exe" -c 65001 app.rc -O coff -o app_res.o
-if errorlevel 1 goto fail
+where cl.exe >nul 2>nul
+if not errorlevel 1 goto :use_msvc
+where g++.exe >nul 2>nul
+if errorlevel 1 goto :no_toolchain
+echo [INFO] Using the MinGW-w64 toolchain from PATH.
+"%CMAKE%" -S . -B build -DCMAKE_BUILD_TYPE=Release -G "MinGW Makefiles"
+goto :configured
 
-echo [3/3] g++ main.cpp  -^>  %TARGET%
-"%MINGW%\g++.exe" -std=c++17 -O2 -municode -mwindows -finput-charset=UTF-8 -static-libgcc -static-libstdc++ -o %TARGET% main.cpp app_res.o -lpdh -liphlpapi -ldxgi -lgdi32 -luser32 -ladvapi32 -lole32 -loleaut32 -luuid -lpsapi -lpowrprof
-if errorlevel 1 goto fail
+:use_msvc
+echo [INFO] Using the MSVC toolchain from PATH.
+"%CMAKE%" -S . -B build -DCMAKE_BUILD_TYPE=Release
+goto :configured
+
+:no_toolchain
+echo [ERROR] No C++ compiler was found in PATH.
+echo   Install MinGW-w64 (g++.exe) or MSVC (cl.exe) and add it to PATH.
+exit /b 1
+
+:configured
+if errorlevel 1 goto :fail
+
+echo [2/3] build ...
+"%CMAKE%" --build build --parallel
+if errorlevel 1 goto :fail
+
+echo [3/3] test ...
+set "CTEST=ctest"
+if not "%CMAKE%"=="cmake" for %%I in ("%CMAKE%") do set "CTEST=%%~dpIctest.exe"
+"%CTEST%" --test-dir build --output-on-failure
+if errorlevel 1 goto :fail
 
 echo.
-echo Build OK : %TARGET%
-echo.
+echo Build OK: bin\HardwareMonitorBall.exe
 exit /b 0
 
 :fail
 echo.
-echo BUILD FAILED
-echo.
+echo Build FAILED - see the errors above.
 exit /b 1

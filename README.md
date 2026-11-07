@@ -1,14 +1,15 @@
-# 硬件监视器
+# HardwareMonitorBall
 
-一个 Windows 桌面小工具：**实时看 CPU / 固态硬盘的温度、占用率和网速，一键把整机硬件配置导出成可复制的纯文本。**
+**极简硬件监视器** —— 一个常驻桌面的圆形悬浮球，实时显示 CPU 温度 / SSD 温度 / 内存占用 / CPU 占用。
 
-程序约 1600 行 C++（单文件 `main.cpp`），纯 Win32 API + GDI 手绘界面，不使用 Qt / MFC / Electron 等任何第三方 GUI 框架，也不需要管理员权限、不需要驱动。编译出来是一个 **687 KiB 的单 exe**，拷到哪都能直接跑。
+纯 Win32 + GDI，约 2200 行 C++（18 个 `.cpp` + 17 个头文件，按层分在 `src\` 下），**不依赖任何第三方 GUI 库，也不需要管理员权限**。
 
-![硬件监视器](HardwareMonitor.png)
+![HardwareMonitorBall](assets/HardwareMonitor.png)
 
 ---
 
-> **当前版本：v1.0.0.0**（2026-10-11）—— 首个正式版本：3 列 × 2 行指标卡、温度曲线与硬件信息默认折叠、窗口可置顶、硬件信息一键复制为纯文本。各版本的详细改动见 [更新历史](#更新历史)。
+> **当前版本：v1.1**（2026-11-06）—— 工程结构按标准布局重组：`src/` 分层（`app / core / theme / metrics / ui / platform / util`）、
+> 成品进 `bin\`、`build/` 只放中间产物、`tests/` 走 CTest；exe 内嵌信息与 `CopyMath` / `Palette` 对齐。
 
 ---
 
@@ -17,21 +18,20 @@
 - [功能特性](#功能特性)
 - [第一部分：如何使用](#第一部分如何使用)
   - [1. 运行程序](#1-运行程序)
-  - [2. 界面说明](#2-界面说明)
-  - [3. 指标卡说明：六个实时指标](#3-指标卡说明六个实时指标)
-  - [4. 折叠区块：温度曲线与硬件信息](#4-折叠区块温度曲线与硬件信息)
-  - [5. 一键复制：导出为纯文本](#5-一键复制导出为纯文本)
-  - [6. 鼠标与快捷键](#6-鼠标与快捷键)
-  - [7. 数据来源与权限边界](#7-数据来源与权限边界)
+  - [2. 界面与操作](#2-界面与操作)
+  - [3. 四种指标的数据源与精度](#3-四种指标的数据源与精度)
+  - [4. 设置保存在哪](#4-设置保存在哪)
 - [第二部分：如何从源码编译](#第二部分如何从源码编译)
   - [环境准备](#环境准备)
-  - [方式一：双击 build.bat](#方式一双击-buildbat)
+  - [方式一：双击 build.bat（推荐）](#方式一双击-buildbat推荐)
   - [方式二：手动执行命令](#方式二手动执行命令)
-  - [编译参数说明](#编译参数说明)
-  - [依赖情况](#依赖情况)
+  - [构建系统做了什么](#构建系统做了什么)
+  - [单元测试](#单元测试)
 - [项目结构](#项目结构)
+- [源码架构说明](docs/ARCHITECTURE.md)
 - [工作原理](#工作原理)
 - [常见问题](#常见问题)
+- [已知限制](#已知限制)
 - [更新历史](#更新历史)
 - [关于 AI 使用](#关于-ai-使用)
 
@@ -39,16 +39,14 @@
 
 ## 功能特性
 
-- **温度 / 占用 / 网速一屏看完**：CPU 温度、SSD 温度、内存占用、CPU 占用、下载速率、上传速率，六张卡片按列分组
-- **温度曲线**：CPU 与 SSD 最近 2 分钟走势，GDI 直接绘制，红蓝双线
-- **硬件信息一览**：处理器、核心线程数、最高频率、主机型号、主板、BIOS（含日期）、内存规格与颗粒型号、显存、存储设备、系统版本
-- **一键复制为纯文本**：点「复制信息」或按 `Ctrl+C`，把全部信息整理成对齐的纯文本写进剪贴板，含**每条内存插槽的详情**与**显存分项数据**
-- **窗口置顶**：点「置顶」让窗口浮在最前面，方便边干活边瞄一眼
-- **两个区块默认折叠**：温度曲线与硬件信息收起时整窗只有 574 px 高（168 DPI 下），点标题条展开
-- **跟随系统主题**：自动匹配浅色 / 深色
-- **高 DPI 不糊**：Per-Monitor V2 DPI 感知，且缩放用浮点计算，175 % DPI 不会被错算成 200 %
-- **纯 C++ + Win32 API + GDI**：不使用任何第三方 GUI 框架
-- **单一 exe 文件**：不需要安装，也不需要附带 MinGW 的运行库 DLL（已静态链接）
+- **四种指标一键切换**：CPU 温度 / SSD 温度 / 内存占用 / CPU 占用，单击球或滚轮循环
+- **两种形态**：悬浮球（点一下就看）与展开面板（四个指标并排看，点卡片可设为球上默认显示）
+- **环形仪表**：球外圈按数值填充，CPU 温度 ≥75 °C 转黄、≥90 °C 转红（SSD 是 55 / 70）
+- **可拖拽、可置顶、可隐藏到托盘**；位置与开关状态写注册表，下次启动原样回来
+- **跟随系统明暗主题**：读 `AppsUseLightTheme`，深浅两套配色
+- **高 DPI 自适应**：Per-Monitor V2，175% 缩放下字不糊、球不扁
+- **普通用户权限**：三个数据源都不需要驱动、不需要提权（HWiNFO 那类工具要管理员）
+- **单一 exe**：不需要安装，`bin\HardwareMonitorBall.exe` 拷走就能用
 
 ---
 
@@ -56,416 +54,386 @@
 
 ## 1. 运行程序
 
-直接双击 `HardwareMonitor.exe` 即可。
+直接双击 `bin\HardwareMonitorBall.exe` 即可，无需安装、无需管理员权限。
 
-| 项目 | 说明 |
-|---|---|
-| 安装 | 不需要。整个程序就是一个 exe |
-| 写文件 | **不写任何文件**。不生成配置、不写日志、不改注册表 |
-| 权限 | 普通用户权限即可。**不要**以管理员身份运行——没必要 |
-| 网络 | 不联网。只统计网卡收发字节数，不发包、不上传 |
+程序启动后**默认停靠在屏幕右侧**（工作区右上角往下 180 px），第一次运行会从托盘弹一条气泡提示告诉你操作方式。
 
-> **提示**：因为程序不写配置，所以「置顶」「展开状态」这些开关**不会被记住**，每次打开回到默认（不置顶、两个区块折叠）。这是刻意的——不写注册表就彻底不留痕。
+- **单实例**：重复双击不会开出第二个球，而是把已经在跑的那个唤回前台（靠命名 Mutex `Local\HWMonBallSingleton`）。
+- **不进任务栏、不进 Alt-Tab**（`WS_EX_TOOLWINDOW`），只在托盘留一个图标。
+- **球外区域点击穿透**：窗口用 `SetWindowRgn` 裁成圆形，点在圆外会直接落到下面的窗口上。
 
-## 2. 界面说明
+> `bin\` 里只有 exe 一个文件。程序**不读写任何配置文件**，所有状态都在注册表当前用户下（见第 4 节），所以整个 `bin\` 拷到哪都能跑。
 
-```
-┌────────────────────────────────────────────────────────────────────┐
-│ [置顶]                点标题条展开 / 收起               [复制信息] │
-├──────────────────┼──────────────────┼──────────────────────────────┤
-│ CPU 温度         │ 内存占用         │ ↓ 下载                       │
-│  67.9 °C         │  15.5 / 32 GB    │  319.4 KB/s                  │
-│ ────────────     │ ────────────     │                              │
-├──────────────────┼──────────────────┼──────────────────────────────┤
-│ SSD 温度         │ CPU 占用         │ ↑ 上传                       │
-│  41.0 °C         │  12 %            │  33.4 KB/s                   │
-│ ────────────     │ ────────────     │                              │
-├────────────────────────────────────────────────────────────────────┤
-│ ▶ 温度曲线                                             最近 2 分钟 │
-├────────────────────────────────────────────────────────────────────┤
-│ ▶ 硬件信息                                                   13 项 │
-└────────────────────────────────────────────────────────────────────┘
-```
-
-窗口高度会随展开状态自动重算。**展开 / 收起时窗口左上角位置不动**，不会跳到屏幕别处。
-
-| 区域 | 内容 |
-|---|---|
-| 顶部工具栏 | 左侧「置顶」按钮，右侧「复制信息」按钮 |
-| 指标卡（3 列 × 2 行） | 左列＝两个温度，中列＝内存 / CPU 占用，右列＝下载 / 上传 |
-| 温度曲线（可折叠） | CPU 红、SSD 蓝，纵轴 25～105 °C |
-| 硬件信息（可折叠） | 启动时采集一次的静态信息 |
-
-| 展开状态 | 窗口高度（168 DPI 实测） |
-|---|---|
-| 全部折叠（默认） | 574 px |
-| 展开温度曲线 | 756 px（+182） |
-| 再展开硬件信息 | 1249 px（+493） |
-
-## 3. 指标卡说明：六个实时指标
-
-| 指标 | 刷新 | 数据来源 | 备注 |
-|---|---|---|---|
-| CPU 温度 | 1 s | ACPI 热区（PDH 计数器） | ≥ 90 °C 红、≥ 75 °C 橙、否则绿 |
-| SSD 温度 | 5 s | `PhysicalDrive0` 的温度查询 | ≥ 70 °C 红、≥ 55 °C 橙、否则蓝 |
-| 内存占用 | 1 s | `GlobalMemoryStatusEx` | 显示「已用 / 总量」+ 进度条 |
-| CPU 占用 | 1 s | `GetSystemTimes` 差分 | 全核平均占用率 |
-| ↓ 下载 | 1 s | `GetIfTable2` 的 `InOctets` 差分 | 单位在 B/s · KB/s · MB/s · GB/s 间自动切换 |
-| ↑ 上传 | 1 s | `GetIfTable2` 的 `OutOctets` 差分 | 同上 |
-
-**为什么 SSD 温度是 5 秒刷新、其他都是 1 秒？** 因为读磁盘温度要打开 `\\.\PhysicalDrive0` 句柄并下发 IOCTL，比读内存 / 网络贵得多；而磁盘温度 5 秒内本来也不会有明显变化。1 秒刷一次纯属浪费。
-
-**为什么网速只算物理网卡？** `GetIfTable2` 会把 VPN、Hyper-V 虚拟交换机、TAP 适配器、回环接口全都列出来。这些虚拟接口要么恒定为零、要么会把本机到本机的流量重复计入，统计进去只会让数字失真。所以只保留类型是以太网或 WiFi、并且 `OperStatus = Up` 的网卡。
-
-## 4. 折叠区块：温度曲线与硬件信息
-
-两个区块都**默认收起**，标题条左边有三角指示（`▶` 收起 / `▼` 展开），点标题条任意位置切换。
-
-- **温度曲线**：纵轴固定 25～105 °C（常量 `TEMP_MIN` / `TEMP_MAX`）。采样缓冲存 180 个点（3 分钟，常量 `HIST_MAX`），但只画最近 120 个点（2 分钟，常量 `HIST_SHOW`）—— 缓冲多留 60 个点，是为了让曲线在刚启动时也能有一段历史可画，而不是从一条空线开始。
-- **硬件信息**：13 行静态信息，启动时采集一次，之后不再刷新。
-
-> **提示**：硬件信息区的内容是静态的，程序每秒只重绘上半部分（工具栏 + 卡片 + 曲线），信息区不参与重绘。这是一处实打实的优化，见 [工作原理](#工作原理)。
-
-## 5. 一键复制：导出为纯文本
-
-点工具栏的「复制信息」或按 `Ctrl+C`，会把**全部**信息（静态硬件信息 + 复制时刻的实时状态）整理成对齐的纯文本写入剪贴板。复制成功后按钮会变绿显示「已复制」1.2 秒。
-
-以下为「复制信息」的示例输出。实际内容取决于运行程序的机器，下面用占位符 `<…>` 表示会被替换的部分：
+## 2. 界面与操作
 
 ```
-===== 硬件信息  硬件监视器 v1.0.0.0 =====
-处理器          : <处理器型号，来自本机 SMBIOS>
-核心 / 线程     : <核心数> / <线程数>
-最高频率        : <最高频率> GHz
-主机型号        : <主机型号>
-主板            : <主板型号>
-BIOS            : <厂商> <版本>  (<日期>)
-内存            : <可用总量> GB  ·  <条数> × <单条容量> GB <内存类型>-<速率>
-内存颗粒        : <颗粒制造商> <型号>
-显示适配器      : <显示适配器型号>
-显存            : <专用显存> MB  ·  共享 <共享显存> GB
-存储设备        : <磁盘型号>
-操作系统        : <Windows 版本>  (build <内部版本号>)
-SMBIOS 版本     : <版本号>
-记录时间        : <复制时刻的本地时间>
-
-===== 内存 =====
-操作系统可见    : <可用总量> GB
-插槽数          : <条数> 条
-物理合计        : <总物理内存> GB
-内存类型        : <类型>
-运行速率        : <速率> MT/s
-制造商          : <制造商>
-型号 P/N        : <型号>
-第 1 条         : <容量> GB   插槽 <Device Locator> · <Bank Locator>
-第 2 条         : <容量> GB   插槽 <Device Locator> · <Bank Locator>
-...（按实际插槽数逐条列出）
-当前占用        : <已用> / <总量> GB  (<百分比>%)
-
-===== 显卡 =====
-显示适配器      : <型号>
-专用显存        : <专用> MB
-共享系统内存    : <共享> GB (<共享 MB>)
-可寻址显存合计  : <合计> GB
-
-===== 实时状态（复制时刻）=====
-CPU 温度        : <温度> °C
-SSD 温度        : <温度> °C
-CPU 占用        : <百分比> %
-内存占用        : <已用> / <总量> GB  (<百分比>%)
-网络            : ↓ <下载速率>    ↑ <上传速率>
+        ╭─────────╮
+        │  47 °C  │        ← 中央：数值 + 单位
+        │   CPU   │        ← 下方：指标小字
+        ╰─────────╯
+        外圈：按数值填充的环形仪表（隐式 25~105 °C 映射）
 ```
-
-**为什么内存插槽要带上 `P0 CHANNEL A/B/C/D` 这样的标识？** 因为部分机器（尤其是某些笔记本）的 SMBIOS 里，`Device Locator` 字段四条内存**全都被填成了 `DIMM 0`**，光看它根本分不出是哪一条。真正区分插槽的是 `Bank Locator`（示例里是 `P0 CHANNEL A` 到 `D`）。程序会检测 `Device Locator` 是否重复，重复了就自动把 `Bank Locator` 拼上去。WMI 的 `Win32_PhysicalMemory` 也有同样的现象（`DeviceLocator` 全 `DIMM 0`，`BankLabel` 才有区分度）。
-
-## 6. 鼠标与快捷键
 
 | 操作 | 效果 |
 |---|---|
-| 点「置顶」按钮 | 切换窗口总在最前（激活时按钮高亮、文字变「已置顶」） |
-| 点「复制信息」按钮 | 全部信息写入剪贴板 |
-| 点折叠区块标题条 | 展开 / 收起该区块 |
-| `Ctrl+C` | 同「复制信息」 |
-| `Esc` | 关闭程序 |
-| 鼠标悬停在按钮或标题条上 | 光标变成手型（表示可点） |
+| 左键单击球 | 循环切换指标 |
+| 左键双击球 | 展开面板 |
+| 左键双击面板标题栏 | 收起为球 |
+| 滚轮（球上） | 切换指标（上/下 = 前/后） |
+| 右键 | 上下文菜单：切换指标 / 展开收起 / 置顶 / 隐藏 / 退出 |
+| 拖拽 | 移动窗口（位移超过 4 px 才算拖拽，手抖不会误移动） |
+| `Esc` | 面板形态下收起；球形态下隐藏到托盘 |
+| 托盘图标 | 双击显隐；右键菜单 |
 
-> **为什么不用标准按钮控件？** 整个界面是 GDI 手绘的，没有用 `CreateWindow` 建子控件。这样界面风格（圆角卡片、配色、字体）能完全统一，也不会有 Common Controls 版本差异导致的观感问题。代价是点击要自己做命中测试——四个可点区域的矩形（`g_rcBtnTopmost`、`g_rcBtnCopy`、`g_rcHdrChart`、`g_rcHdrInfo`）在每次重绘时更新。
+**展开面板**是一张 258 × 291（逻辑像素）的圆角卡片，2 × 2 四张指标卡片：
 
-## 7. 数据来源与权限边界
+- 卡片右上角的小圆点 = **当前球上默认显示的指标**；点任意卡片可以改；
+- 内存卡片的副文本是「已用 / 总量 GB」，CPU 占用卡片是「N 逻辑核心」；
+- 每张卡片底部有一条进度条，比例口径与环形仪表一致。
 
-全部数据都来自**普通用户权限**就能读的接口。
+## 3. 四种指标的数据源与精度
 
-| 项目 | 接口 |
-|---|---|
-| CPU 温度 | PDH 计数器 `\Thermal Zone Information(*)\Temperature` |
-| 磁盘温度 | `IOCTL_STORAGE_QUERY_PROPERTY` + `StorageDeviceTemperatureProperty`(52) |
-| 磁盘型号 | `IOCTL_STORAGE_QUERY_PROPERTY` + `StorageDeviceProperty`(0) |
-| 网络速率 | `GetIfTable2`（`InOctets` / `OutOctets` 差分） |
-| 显存 | DXGI `IDXGIFactory1::EnumAdapters1` + `GetDesc1` |
-| 硬件静态信息 | SMBIOS（`GetSystemFirmwareTable('RSMB')` 直读，不经 WMI） |
-| CPU 占用 | `GetSystemTimes` 差分 |
-| 内存 | `GlobalMemoryStatusEx` |
-| 系统版本 | `RtlGetVersion` + 注册表 |
+| 指标 | 数据源 | 说明 |
+|---|---|---|
+| CPU 温度 | PDH 计数器 `\Thermal Zone Information(*)\Temperature` | ACPI 热区，单位开尔文。**整数分辨率（1 °C）** |
+| SSD 温度 | `IOCTL_STORAGE_QUERY_PROPERTY` / `StorageDeviceTemperatureProperty` | 多传感器取最高值；以 `dwDesiredAccess = 0` 打开设备，普通权限可读 |
+| CPU 占用 | `GetSystemTimes` 差分 | kernel 时间已含 idle，所以 `total = kernel + user` |
+| 内存 | `GlobalMemoryStatusEx` | 已用 = Total − Available |
 
-**读不到的（这是物理上限，不是 bug）**
+**CPU 温度准不准？** 做过与 HWiNFO64 v8.54 的实测对比（同一时刻：读 PDH → 截 HWiNFO → 截球，
+负载用 8 进程跑满 40 秒，共 6 个工况点）：
 
-| 项目 | 为什么读不到 |
-|---|---|
-| GPU 温度 | 需要访问 SMN / MSR 寄存器 |
-| 风扇转速 | 需要访问 EC / Super I/O |
-| 各核心温度 | 需要访问 SMN |
-| 电压 | 同上 |
+| 工况 | 本程序数据源 ACPI (°C) | 球面显示 | HWiNFO CPU (Tctl/Tdie) | 偏差 |
+|---|---|---|---|---|
+| 空闲 | 47.52 | 47 | 48.6 | −1.1 |
+| 满载 +8 s | 73.18 | 73 | 73.4 | −0.2 |
+| 满载 +18 s | 77.85 | 78 | 78.5 | −0.7 |
+| 满载 +28 s | 81.18 | 81 | 81.6 | −0.4 |
+| 冷却 +20 s | 54.85 | 55 | 55.9 | −1.0 |
+| 冷却 +40 s | 50.85 | 51 | 51.4 | −0.5 |
 
-这几项都需要 Ring0 驱动。走第三方驱动（WinRing0 之类）等于往系统里塞一个内核态组件，与本项目「零依赖、不加装东西」的原则冲突，所以**不做**。
+偏差 **−1.1 ~ −0.2 °C**，满载到 81 °C 时依然对得上，没有"负载越高偏得越多"的失真。
+SSD 温度与 HWiNFO 的「磁盘温度」**完全一致**（同机 35 °C）。
+
+偏差来源是三件事叠加，都不是算法错误：
+
+1. **数据源本身低一点**：ACPI 热区报的温度比 CPU 内部 DTS 略低；
+2. **1 °C 量化**：ACPI 计数器是整数开尔文，连续采样实测会跳 ±1~2 K（EC 固件的量化行为）；
+3. **显示取整**：球面只显示整数，`46.85 °C` 显示成 `47`。
+
+> `High Precision Temperature` 并不是更高精度：它恒等于 `Temperature + 0.2 K`，步长同样是 1 K。
+> 换它不会让分辨率变好，只能消掉 `-273.15` 留下的 `.85` 尾巴。
+
+## 4. 设置保存在哪
+
+全部在 **`HKEY_CURRENT_USER\Software\HWMonBall`**，不碰 `HKLM`，所以不需要管理员权限：
+
+| 值名 | 类型 | 含义 |
+|---|---|---|
+| `x` / `y` | DWORD | 悬浮球窗口左上角（屏幕坐标） |
+| `px` / `py` | DWORD | 展开面板左上角 |
+| `pvalid` | DWORD | 面板位置是否已被真正定位过（防止 `(0,0)` 冒充有效位置） |
+| `metric` | DWORD | 球上默认显示的指标（0 = CPU 温度 … 3 = CPU 占用） |
+| `topmost` | DWORD | 是否置顶 |
+| `hidden` | DWORD | 是否隐藏到托盘 |
+| `tipShown` | DWORD | 首次运行的气泡提示是否弹过 |
+
+想恢复初始状态（位置回到右上角、提示泡重新弹一次）：
+
+```bat
+reg delete "HKCU\Software\HWMonBall" /f
+```
 
 ---
 
 # 第二部分：如何从源码编译
 
+工程是标准 C++ 布局：根目录放 `CMakeLists.txt` + `src/` + `tests/` + `assets/` + `docs/`，
+编译中间文件全在 `build/`，成品输出到 `bin\`。
+
 ## 环境准备
 
-### 1. 编译器：MinGW-w64
+| 需要 | 用途 | 说明 |
+|---|---|---|
+| **MinGW-w64** | `g++.exe` 编译、`windres.exe` 嵌图标 | 确认 MinGW-w64 安装目录的 `bin\` 下有 `g++.exe`、`windres.exe`、`mingw32-make.exe`（在 `PATH` 上即可） |
+| **CMake ≥ 3.20** | 构建 | 装官方安装包即可；本机若没有，可在 `.build.local.bat` 设 `CMAKE` 指向任意一份，`build.bat` 会自动找 |
+| 无其它依赖 | — | PDH / IOCTL / GDI 都是系统 API，不需要 SDK 额外组件 |
 
-必须是 **MinGW-w64**（提供 `g++.exe` 与 `windres.exe`），例如安装到 `C:\mingw64\bin`（请将下面的命令路径替换为你自己的安装位置，或把 `bin` 目录加入 PATH）。
+## 方式一：双击 build.bat（推荐）
 
-> ⚠ **g++ 不能嵌资源。** 图标、应用清单、版本信息都必须先用 `windres.exe` 编译成 `.o`，再和 `.cpp` 一起链接。这是 Windows 上用 MinGW 编译带资源程序的标准两步，不能省。
+根目录的 `build.bat` 是个薄封装：找 cmake → 挑工具链 → 配置 → 编译 → 跑测试。脚本内部 `cd /d "%~dp0"`，从哪儿双击都行。
 
-### 2. Python + Pillow（可选）
-
-只用于 `tools/make_icon.py` 生成图标。没有也能编译——`build.bat` 检测到 Python 不存在就跳过这步，直接用目录里已有的 `HardwareMonitor.ico`。
-
-## 方式一：双击 build.bat
+工具链的选择规则是：**PATH 里有 MSVC（`cl.exe`）就用 MSVC，否则用 MinGW-w64（在 `PATH` 上，或在 `.build.local.bat` 指定）**。
 
 ```
-build.bat
+[INFO] Using MinGW toolchain from <你的 MinGW bin 目录>.
+[1/3] configure ...
+[2/3] build ...
+[3/3] test ...
+1/1 Test #1: metric_map .......................   Passed    0.36 sec
+100% tests passed out of 1
+Build OK: bin\HardwareMonitorBall.exe
 ```
 
-三条命令串起来：生成图标 → 编译资源 → 编译主程序。成功后输出 `Build OK : HardwareMonitor.exe`。
-
-> ⚠ `build.bat` 必须是 **CRLF 换行且纯 ASCII**。cmd.exe 按 GBK 解析批处理，LF 换行或中文注释都可能让它解析出错。
+> `build.bat` 刻意只用 **ASCII + CRLF**：`.bat` 里写中文在 GBK 控制台下会乱码，
+> 纯 LF 换行则会让 `^` 续行解析出错（这两条 `.editorconfig` 里也标了）。
+>
+> `ctest` 不写死名字而是从 cmake 所在目录拼路径——CMake 走 venv 那份时，`ctest` 并不在 `PATH` 上。
 
 ## 方式二：手动执行命令
 
-```bash
-# 1) 生成图标（可选）
-python tools/make_icon.py
+在项目根目录（`CMakeLists.txt` 那一层）执行：
 
-# 2) 编译资源（请将 windres 换成你自己的路径，或确保它在 PATH 中）
-windres -c 65001 app.rc -O coff -o app_res.o
-
-# 3) 编译主程序（请将 g++ 换成你自己的路径，或确保它在 PATH 中）
-g++ -std=c++17 -O2 -municode -mwindows -finput-charset=UTF-8 \
-  -static-libgcc -static-libstdc++ \
-  -o HardwareMonitor.exe main.cpp app_res.o \
-  -lpdh -liphlpapi -ldxgi -lgdi32 -luser32 -ladvapi32 \
-  -lole32 -loleaut32 -luuid -lpsapi -lpowrprof
+```bat
+cmake -S . -B build -G "MinGW Makefiles" -DCMAKE_BUILD_TYPE=Release
+cmake --build build --parallel
+ctest --test-dir build --output-on-failure
 ```
 
-> ⚠ 上面是 Git Bash 的续行符 `\`。如果在 **cmd.exe** 里执行，续行符要换成 `^`。
+> 装了 Ninja 的话也可以 `-G Ninja`；Git Bash 里同样的命令照用。
 
-**易错参数，一个个说清楚：**
+## 构建系统做了什么
 
-| 参数 | 为什么必须 |
+| 配置 | 作用 |
 |---|---|
-| `windres -c 65001` | `app.rc` 是 **UTF-8** 编码，里面的版本信息有中文。不加这个参数 windres 会按系统 ANSI 代码页（GBK）解析，中文变成乱码 |
-| `windres -O coff` | 默认输出 ELF 格式，MinGW 的 g++ 需要 **COFF** |
-| `-municode` | 入口是 `wWinMain`，不是 `main` |
-| `-mwindows` | 子系统设为 Windows，不弹控制台黑窗 |
-| `-finput-charset=UTF-8` | 源码里的中文字符串字面量按 UTF-8 解析 |
-| `-static-libgcc -static-libstdc++` | 静态链接 GCC / C++ 运行库。不加的话 exe 会依赖 `libgcc_s_seh-1.dll` 和 `libstdc++-6.dll`，拷到没装 MinGW 的机器上就跑不起来 |
+| `project(... VERSION 1.1.0 LANGUAGES CXX RC)` | 同时启用 C++ 与 RC（资源）编译 |
+| `add_executable(... WIN32 ...)` | `WIN32` = GUI 子系统（`-mwindows`），运行不弹黑框 |
+| `target_include_directories(...)` | 每个模块目录一个 `-I`，源码里照旧写 `#include "app.h"` |
+| `CMAKE_RC_FLAGS = -c 65001 -I<项目根>` | `app.rc` 是 UTF-8（版本信息有中文），且要能按相对路径找到 `assets/HardwareMonitor.ico` |
+| `target_compile_definitions(... UNICODE NOMINMAX WIN32_LEAN_AND_MEAN ...)` | 宽字符 API、关掉 `<windows.h>` 的 min/max 宏 |
+| `-static -static-libgcc -static-libstdc++ -mwindows -municode` | 静态链运行库；入口是 `wWinMain`，**`-municode` 不能省**，少了它链接器会去找 `WinMain` 并报 undefined reference |
+| `RUNTIME_OUTPUT_DIRECTORY = bin` | 成品落在 `bin\`，中间文件全在 `build/` |
+| `OBJECT_DEPENDS app.rc → assets/HardwareMonitor.ico` | 改了图标必须重跑 `windres`，挂进依赖图免得忘了 |
+| `enable_testing()` + `tests/` | CTest 跑 `test_metric_map` |
 
-## 编译参数说明
+## 单元测试
 
-| 参数 | 作用 |
+`src/core/` 这一层是纯 C++（不 `#include <windows.h>`），所以能直接编成控制台程序跑，不开窗口、秒级结束：
+
+```bat
+ctest --test-dir build --output-on-failure
+:: 或者直接跑，看逐条结果
+build\tests\test_metric_map.exe
+```
+
+`tests/test_metric_map.cpp` 现在 **32 条断言**，覆盖：
+
+| 组 | 内容 |
 |---|---|
-| `-std=c++17` | 用了 `std::wstring` / `std::vector` 与结构化绑定等 C++17 特性 |
-| `-O2` | 常规优化 |
-| `-lpdh` | PDH 性能计数器（`PdhOpenQuery` / `PdhAddEnglishCounterW` 等），读 CPU 温度 |
-| `-liphlpapi` | `GetIfTable2`，读网卡流量 |
-| `-ldxgi` | DXGI 接口，读显存 |
-| `-lgdi32` / `-luser32` | GDI 绘图与窗口 |
-| `-ladvapi32` | 注册表（读主题偏好、系统版本） |
-| `-lole32 -loleaut32 -luuid` | COM 初始化（DXGI 需要），`uuid` 提供 GUID 符号 |
-| `-lpsapi` | 进程内存信息 |
-| `-lpowrprof` | 电源状态 |
+| 温度比例 | 25 °C → 0、65 °C → 0.5、105 °C → 1；低于 25 钳到 0、高于 105 钳到 1；`-1`（没采到）返回 −1 |
+| 百分比比例 | 0 / 50 / 100 的线性映射，>100 钳到 1 |
+| 档位边界 | CPU 温度 74/75/89/90、SSD 55/70、内存 60/61/85/86 —— 逐点核对"正常 / 警告 / 危险" |
+| 四舍五入 | 74.4 → 74、74.5 / 74.6 → 75（与球面显示同口径） |
+| 数值文本 | 负值 → `--`、`47.5` → `48`、`100` → `100` |
+| 联动 | `74.6` 显示成 `75`，配色就按 75 判成"警告" —— 数字与颜色必须同口径 |
 
-## 依赖情况
-
-`objdump -p HardwareMonitor.exe | grep "DLL Name"` 的实际输出：
-
-```
-ADVAPI32.dll      GDI32.dll        IPHLPAPI.DLL     KERNEL32.dll
-USER32.dll        dxgi.dll         pdh.dll
-api-ms-win-crt-convert-l1-1-0.dll      api-ms-win-crt-environment-l1-1-0.dll
-api-ms-win-crt-heap-l1-1-0.dll         api-ms-win-crt-locale-l1-1-0.dll
-api-ms-win-crt-math-l1-1-0.dll         api-ms-win-crt-private-l1-1-0.dll
-api-ms-win-crt-runtime-l1-1-0.dll      api-ms-win-crt-stdio-l1-1-0.dll
-api-ms-win-crt-string-l1-1-0.dll       api-ms-win-crt-utility-l1-1-0.dll
-```
-
-`api-ms-win-crt-*` 是 Universal CRT，Windows 10 起系统自带；其余全是系统 DLL。**没有任何 MinGW 运行库依赖。**
+没有引第三方测试框架（一个 `CHECK` 宏 + 计数），以后想换 Catch2 / GoogleTest，只改 `tests/` 即可，顶层 CMake 不用动。
 
 ---
 
 ## 项目结构
 
-| 文件 | 说明 |
+```text
+HardwareMonitorBall_v1.1/
+├── CMakeLists.txt             构建入口（版本号、源文件清单、输出到 bin\）
+├── build.bat                  Windows 一键编译：找 cmake → 挑工具链 → 配置 → 编译 → 测试
+├── README.md
+├── .gitignore                 build/、*.o、*.exe
+├── .clang-format              代码风格（4 空格 / 100 列 / 大括号不换行）
+├── .editorconfig              缩进与换行统一（.bat 强制 CRLF）
+│
+├── bin\
+│   └── HardwareMonitorBall.exe    成品（双击运行，整个 bin\ 拷走即用）
+│
+├── assets/                    构建输入
+│   ├── HardwareMonitor.ico    程序图标（嵌进 exe）
+│   └── HardwareMonitor.png    README 预览图
+│
+├── src/
+│   ├── main.cpp               入口：单实例 / 主题 / DPI / 注册窗口类 / 消息循环
+│   │
+│   ├── app/                   应用层：全局状态、窗口过程、交互
+│   │   ├── app.h                  常量、指标枚举、全局状态的 extern 声明
+│   │   ├── app_core.cpp           全局状态定义 + AppInit / AppShutdown
+│   │   ├── window.cpp             WndProc、拖拽、命令分发、形态切换
+│   │   ├── app.rc                 资源：图标 + 清单 + 版本信息
+│   │   ├── resource.h             资源 ID
+│   │   └── app.manifest           Per-Monitor V2、asInvoker
+│   │
+│   ├── core/                  纯逻辑层（零 Win32，可被单测直接链接）
+│   │   └── metric_map.h / .cpp    比例映射 / 档位判定 / 数值格式化
+│   │
+│   ├── theme/                 调色板与 DPI
+│   │   └── theme.h / .cpp         深浅两套配色、g_scale、PX()、Mix()
+│   │
+│   ├── metrics/               数据采集
+│   │   ├── cpu_temp.h / .cpp      PDH 热区计数器
+│   │   ├── disk_temp.h / .cpp     IOCTL 磁盘温度
+│   │   ├── system_load.h / .cpp   GetSystemTimes / GlobalMemoryStatusEx
+│   │   └── metrics.h / .cpp       采样调度 + 指标呈现（值 / 文本 / 比例 / 配色）
+│   │
+│   ├── ui/                    绘制层
+│   │   ├── gfx.h / .cpp           圆角、圆、圆环、圆弧
+│   │   ├── text.h / .cpp          9 个字体句柄 + 四种文本排版
+│   │   ├── layout.h / .cpp        尺寸换算、卡片/按钮矩形、工作区收敛、异形区域
+│   │   └── paint.h / .cpp         双缓冲 + 悬浮球 + 面板
+│   │
+│   ├── platform/              Win32 平台层
+│   │   ├── config.h / .cpp        注册表读写
+│   │   ├── tray.h / .cpp          托盘图标与托盘菜单
+│   │   ├── menu.h / .cpp          右键菜单
+│   │   └── tooltip.h / .cpp       悬停提示泡
+│   │
+│   └── util/
+│       └── util.h / .cpp          Fmt / AnsiToWide / TrimW / CopyTip
+│
+├── tests/
+│   ├── CMakeLists.txt
+│   └── test_metric_map.cpp    32 条断言（CTest）
+│
+├── docs/
+│   └── ARCHITECTURE.md        分层图、依赖方向、关键坑位、温度实测记录
+│
+└── build/                     **CMake 生成**：编译中间文件（不入库，可随时删）
+```
+
+| 位置 | 作用 |
 |---|---|
-| `main.cpp` | 全部逻辑（采集 + 绘制 + 复制），1614 行，单文件 |
-| `app.rc` | 资源脚本：应用清单 + 图标 + 版本信息（`FILEVERSION 1,0,0,0`） |
-| `app.manifest` | 应用清单（Common Controls v6 / Per-Monitor V2 DPI / `asInvoker`） |
-| `build.bat` | 一键编译（CRLF + 纯 ASCII） |
-| `HardwareMonitor.ico` | 多尺寸图标（16 / 24 / 32 / 48 / 64 / 128 / 256），24 KiB |
-| `HardwareMonitor.png` | 512 px 图标源图 |
-| `tools/make_icon.py` | 图标生成脚本（开发用，需要 Pillow） |
-| `tools/capture_window.py` | 开发辅助：用 `PrintWindow` 抓取本程序窗口截图，不依赖前台焦点 |
-| `README.md` | 本文档 |
-| `app_res.o` | 编译中间产物（`windres` 输出）。**不在仓库里**，跑一次构建就会出现 |
+| `CMakeLists.txt` | 顶层构建脚本：源文件清单、`-I` 路径、链接库、测试入口 |
+| `build.bat` | 一键编译 + 跑测试（等价于手动那三条命令） |
+| `bin\` | 成品：`HardwareMonitorBall.exe` |
+| `assets/` | 只放**构建输入**：图标与 README 图 |
+| `src/app/` | 入口之外的"应用层"：全局状态、窗口过程、交互 |
+| `src/core/` | 纯逻辑，零 Win32，是唯一有单测的一层 |
+| `src/metrics/` | 四个数据源 + 采样调度，只产数字不认识颜色 |
+| `src/ui/` | 绘制原语、字体、布局、球与面板 |
+| `src/platform/` | 注册表、托盘、菜单、提示泡 |
+| `tests/` | CTest 单元测试（只链 `core/`） |
+| `docs/ARCHITECTURE.md` | 改代码前先看这份 |
+| `build/` | CMake 生成物，`.gitignore` 已忽略 |
+
+依赖方向只有一条：**`app` → `ui` / `platform` / `metrics` / `theme` → `core` / `util`**，
+`core` 不 include `<windows.h>`；全局变量**只在 `app/app_core.cpp` 定义一次**。
+细节见 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)。
 
 ## 工作原理
 
 ```
-                          WM_CREATE  启动时一次性采集                   
-                                 │                                      
-        ┌────────────────────────┼────────────────────────┐             
-        ▼                        ▼                        ▼             
-   SMBIOS 直读             DXGI 枚举适配器         磁盘 IOCTL 查询      
-   GetSystemFirmware       IDXGIFactory1          PhysicalDrive0        
-    Table 'RSMB'                                                        
-        │                        │                        │             
-        └────────────────────────┼────────────────────────┘             
-                                 ▼                                      
-                    g_info[]  （静态信息，只采一次）                    
-                                 │                                      
-        ┌────────────────────────┴────────────────────────┐             
-        │                                                 │             
-   SetTimer 1000 ms                              点标题条 / 按钮        
-        │                                                 │             
-        ▼                                                 ▼             
-   Sample()                                      Relayout() 重算窗口高度
-   ├─ PDH 温度计数器                             或 ToggleTopmost()     
-   ├─ GetSystemTimes 差分                        或 DoCopy()            
-   ├─ GlobalMemoryStatusEx                              │               
-   ├─ GetIfTable2 差分                                  │               
-   └─ 每 5 秒：磁盘温度                                 │               
-        │                                                 │             
-        ▼                                                 ▼             
-   InvalidateRect 上半部分                    InvalidateRect 全窗口     
-        │                                                 │             
-        └────────────────────┬────────────────────────────┘             
-                             ▼                                          
-                         WM_PAINT                                       
-                             │                                          
-                  ┌──────────┴──────────┐                               
-                  ▼                     ▼                               
-           GetBackBuffer()        需要重画信息区？                      
-           缓存的 DIB              仅首次或展开时                       
-                  │                     │                               
-                  └──────────┬──────────┘                               
-                             ▼                                          
-                    BitBlt 到窗口 DC                                    
+   每 1 秒（WM_TIMER）
+        │
+        ├─► CpuTempRead()      PDH \Thermal Zone Information(*)\Temperature  → K − 273.15
+        ├─► CpuUsageRead()     GetSystemTimes 差分
+        └─► RamRead()          GlobalMemoryStatusEx
+        │
+        │   每 5 个周期（IOCTL 慢）
+        └─► ReadDiskTemperature()   IOCTL StorageDeviceTemperatureProperty
+        │
+        ▼
+    g_m（Metrics 结构：四个原始值）
+        │
+        ▼
+   MetricValue / MetricText / MetricRatio / MetricAccent
+        │         │              │                │
+        │         │              │                └─► core::level_by_threshold → 青 / 黄 / 红
+        │         │              └─► core::temp_ratio / percent_ratio → 环形仪表填充比例
+        │         └─► core::format_value → "--" 或整数文本
+        ▼
+    PaintBall / PaintPanel（内存 DC）
+        │
+        ▼
+    BitBlt 到窗口（双缓冲，无闪烁）
 ```
 
-### 细节说明
+**为什么球和卡片都用同一套 `Metric*` 函数**：数值、文本、比例、配色只算一次，
+球面显示 `47` 时环的填充和卡片上的颜色必然一致，不会出现"数字变了颜色没变"。
 
-**1. 双缓冲位图是缓存的，不是每帧新建的。** 窗口客户区在 168 DPI 展开后是 819 × 1203，一块 32 位 DIB 就是 **3.7 MB**。如果每次 `WM_PAINT` 都 `CreateCompatibleBitmap` + `DeleteObject`，等于每秒反复分配释放 3.7 MB 内存。`GetBackBuffer()` 按尺寸缓存这一块，尺寸没变就直接复用。
-
-**2. 每秒只让上半部分失效。** 硬件信息区是静态的，没必要跟着每秒重绘。`WM_TIMER` 里失效的矩形是 `{0, 0, 宽, YInfo()}`，`PaintAll` 再用 `ps.rcPaint.bottom` 判断信息区是否落在脏矩形里，不在就跳过。配合上面那条，CPU 占用从 0.78 % 降到 0.47 %。
-
-**3. DPI 缩放必须走浮点，不能先取整。** 原来写的是 `int s = (int)(g_scale + 0.5f)`，在 168 DPI（实际 1.75 倍）下会被取整成 **2.0**，等于整体放大 14 %。现在统一走 `PX(v) = round(v × dpiScale × uiScale)`，`uiScale = 0.9` 是整体缩小系数。全文件 68 处尺寸计算都换成这个函数。
-
-**4. 磁盘温度的结构体布局得靠实测，不能信头文件。** `\\.\PhysicalDrive0` 用 `GENERIC_READ` 打开会返回**错误 5（拒绝访问）**；必须用 `access = 0`（仅查询属性）打开才能发 IOCTL。而返回的 `STORAGE_TEMPERATURE_DATA_DESCRIPTOR` 经实测是 **header 24 字节 + 每项 16 字节**（不是文档上看起来那样），温度是每项内偏移 2 的 `SHORT`，单位摄氏度。当初凭字节数数错过一次，读出来是错的数。
-
-**5. PDH 温度计数器的单位有两个坑。** `\Thermal Zone Information(*)\Temperature` 的单位是**开尔文**，而 `High Precision Temperature` 是 **0.1 开尔文**——差整整 10 倍。本程序用前者，读出来减 273.15 转摄氏度。
-
-**6. 显卡显存必须用 `IDXGIFactory1` + `GetDesc1`。** 因为筛选软件渲染适配器（Microsoft Basic Render Driver）所需的 `Flags` 字段**只在 `DXGI_ADAPTER_DESC1` 里**，`DXGI_ADAPTER_DESC`（v1）没有，用错会直接编译报 `has no member named 'Flags'`。另外 `EnumAdapters` 可能对同一张物理卡返回多次，要按名字去重。
-
-**7. SMBIOS 几个偏移是实测出来的，不是抄的。** Type 4 的线程数在 `0x2E`（`0x2C` 是「已启用核心数」，第一版就取错了，显示成 8/8）；Type 17 的 Part Number 在 `0x1A`；LPDDR5 的类型编码是 `0x23`（不是想当然的 `0x1F`）。
-
-**8. 静态链接是刻意的。** 不加 `-static-libgcc -static-libstdc++` 时，exe 会依赖 `libgcc_s_seh-1.dll` 和 `libstdc++-6.dll`。这两个 DLL 只有在装了 MinGW 且其 `bin` 目录在系统 PATH 里的机器上才找得到——但那样「单一 exe 绿色便携」就是假的。静态链接后体积从 185 KiB 涨到 687 KiB，换来真正的单文件。
+**形态切换**只是换窗口尺寸 + 换异形区域（椭圆 ↔ 圆角矩形）+ 换绘制函数，
+由 `g_panel` 一个布尔量决定，不销毁重建窗口。
 
 ## 常见问题
 
-**Q：CPU 温度一直显示 `--`，读不到。**
+**Q：球不见了怎么办？**
+两种可能：① 被隐藏到托盘了 —— 双击托盘图标；② 已经退出 —— 重新双击 `bin\HardwareMonitorBall.exe`。
+如果窗口被拖到屏幕外，程序在拖拽结束、启动读配置、DPI 变化时都会把位置收敛回"最近显示器"的工作区，一般不会丢。
 
-按顺序查这三件事：
+**Q：显示 `--` 是什么意思？**
+该指标这次没采到。CPU 温度在极少数机器上没有 ACPI 热区计数器；SSD 温度需要盘支持
+`StorageDeviceTemperatureProperty`（部分 SATA / USB 硬盘盒不支持）。程序会在下一个采样周期重试。
 
-1. 打开「性能监视器」看 `\Thermal Zone Information` 这个计数器集存不存在。不存在就是主板 / BIOS 根本没暴露 ACPI 热区（部分 AMD 笔记本会这样），程序无能为力，只能显示 `--`。
-2. 存在但读不到值，检查系统语言——PDH 计数器集名称可能被本地化。程序已经先尝试 `PdhAddEnglishCounterW`、失败再回退本地化名称，但如果两条都失败就没办法了。
-3. 确认不是以管理员身份运行的（理论上不影响，但换个权限可以排除一种可能）。
+**Q：温度偶尔跳 1~2 度，是读数不稳吗？**
+是**数据源**的特性。ACPI 热区计数器实测在相邻采样间会跳 ±1~2 K（整数开尔文 + EC 固件量化），
+程序只是如实转述。想要更平滑可以在 `metrics.cpp` 里做三点中位数，但响应会变慢。
 
-**Q：温度数字看着偏高 / 偏低，准不准？**
+**Q：为什么我的 CPU 温度比 HWiNFO 低十几度？**
+本程序读的是 **ACPI 热区**，HWiNFO 的 `CPU (Tctl/Tdie)` 读的是 CPU 内部 DTS。
+两者的关系取决于主板 EC 固件：本机（HONOR / Ryzen 7 8845HS）实测只差约 1 °C，
+但不少机器上 ACPI 热区会明显低于核心温度。要拿核心温度必须用内核驱动（需要管理员），本程序刻意不这么做。
 
-读到的 ACPI 热区值**不等于核心结温**（Tctl / Tdie），可能有 ±3～5 °C 的系统偏差。而且整机只有一个读数，没有单核数据——这是用户态方案的物理上限，不是 bug。在典型的笔记本 APU 上，空闲约 70 °C、满载会贴住该 APU 的 Tjmax（多为 100 °C）平台。变化趋势是对的，绝对值当参考。
+**Q：为什么不需要管理员权限？**
+三个数据源都对普通用户开放：PDH 热区计数器、`GetSystemTimes`、`GlobalMemoryStatusEx` 不用说；
+磁盘温度用 `dwDesiredAccess = 0` 打开 `\\.\PhysicalDriveN` 也能发 IOCTL（`GENERIC_READ` 反而会被拒绝）。
 
-**Q：网速显示 0，但我明明在下载。**
+**Q：换一台电脑，之前的设置还在吗？**
+不在。状态存在 `HKCU\Software\HWMonBall`，属于当前用户账户；换机器只有 `bin\` 里的 exe 跟着走。
+新机器上第一次运行会落在默认位置（屏幕右侧、工作区顶部往下 180 px）。
 
-先确认流量走的是物理网卡。程序主动排除了回环与虚拟网卡（VPN、Hyper-V、TAP 等），所以：
+**Q：为什么第一次启动会弹托盘气泡，以后不弹了？**
+`tipShown` 记在注册表里。想再看一次就删掉这个值或整个键（见第 4 节的 `reg delete`）。
 
-- 本机到本机（比如 localhost 的传输）**不计入**，这是对的。
-- 走了 VPN 的话，物理网卡上统计到的是加密后的流量，会略微偏大。
+---
 
-**Q：显存显示只有几百 MB，是不是太小了？**
+## 已知限制
 
-这是核显的正常现象。专用显存通常只有几百 MB（由 BIOS 从内存里划走）；「共享系统内存」是按整机内存估算的**上限**，不是独占资源——核显是从共享内存里按需取的。两个数相加**不等于**真实可用显存。独显上这两个数才更接近实际。
+- **CPU 温度是 ACPI 热区，不是 CPU 内部 DTS**：分辨率 1 °C，且完全依赖主板 EC 固件把 CPU 温度映射到热区。
+- **SSD 温度需要盘支持** `StorageDeviceTemperatureProperty`，不支持的盘显示 `--`。
+- **一次只看一块盘**：扫描 `PhysicalDrive0..5`，取第一个能上报温度的那块；多盘机器不会循环显示。
+- **托盘气泡提示只在第一次启动弹**（`tipShown`）。
+- **不做历史曲线**：只有当前值和环形比例，没有折线图与峰值记录。
 
-**Q：改了代码重新编译，报 `GetIfTable2 was not declared`。**
-
-不是 MinGW 不支持这个 API，是**头文件包含顺序错了**。MinGW 的 `netioapi.h` 用 `#ifdef __IPHLPAPI_H__` 做分支：只要 `iphlpapi.h` 先被包含，它就会跳过 `#include <ws2ipdef.h>`，导致 `GetIfTable2` / `MIB_IF_TABLE2` / `FreeMibTable` 整块不可见。正确顺序是：
-
-```
-winsock2.h → ws2ipdef.h → netioapi.h → iphlpapi.h
-```
-
-**Q：程序占多少资源？**
-
-在典型的 8 核 16 线程笔记本上连续采样 30 秒实测（数值随机器与负载波动）：
-
-| 项目 | 实测值 |
-|---|---|
-| CPU 占用（单核基准） | **0.42 ~ 0.68 %**（三次实测，随系统负载波动） |
-| CPU 占用（整机 16 线程） | 0.026 ~ 0.042 % |
-| 工作集（物理内存） | 23.5 MB |
-| 私有提交 | 8.1 MB |
-| GDI / USER 对象 | 27 / 18 |
-| 内核句柄 | 223（稳定，无泄漏） |
-| 磁盘 I/O | 30 秒内 0 次 |
-
-工作集里的 23.5 MB 有一多半是 `user32` / `gdi32` / `pdh` 这些系统 DLL 的共享页，真正属于它的私有内存是 8.1 MB（其中约 1.7 MB 是那块双缓冲位图，折叠态 819 × 528）。
+---
 
 ## 更新历史
 
-### v1.0.0.0（2026-10-11）
+### v1.1 — 2026-11-06
 
-首个正式版本。
+**重构（目录结构）**
 
-**新增**
+- 1486 行的单文件 `main.cpp` 拆成 **18 个 `.cpp` + 17 个头文件**，按层分目录：
+  `app`（全局状态 / 窗口过程 / 交互）、`core`（纯逻辑，零 Win32）、`theme`（配色与 DPI）、
+  `metrics`（四个数据源 + 采样调度）、`ui`（绘制原语 / 字体 / 布局 / 球与面板）、
+  `platform`（注册表 / 托盘 / 菜单 / 提示泡）、`util`（格式化与编码工具）。
+- 依赖方向固定为 **`app` → `ui` / `platform` / `metrics` / `theme` → `core` / `util`**，
+  全局变量只在 `app/app_core.cpp` 定义一次，`app.h` 只做 extern 声明。
+- 抽出 `core/metric_map`：比例映射、档位判定、四舍五入、数值格式化集中到一处，
+  并且**不再 `#include <windows.h>`**，所以能被单测直接链接。
 
-- 六张实时指标卡：CPU 温度、SSD 温度、内存占用、CPU 占用、下载速率、上传速率，按 3 列 × 2 行分组
-- 温度曲线：CPU 与 SSD 最近 2 分钟走势
-- 硬件信息区：13 项静态信息
-- 一键复制：全部信息导出为对齐纯文本，含每条内存插槽详情与显存分项
-- 窗口置顶开关
-- 两个区块可折叠，默认收起
-- 程序图标（温度计图案，7 档尺寸的 ico）
-- exe 版本信息资源（右键属性 → 详细信息可见）
+**工程化（对齐标准 C++ 布局）**
+
+- 构建系统换成 **CMake**：`CMakeLists.txt` 是唯一构建入口，`build.bat` 退化成几行封装；
+  链接选项（含 `-municode`）、`-I` 路径、RC 编码（`-c 65001`）都写进 CMake。
+- 新增 **`tests/`**（CTest + 32 条断言）与 **`docs/ARCHITECTURE.md`**（分层图、依赖方向、坑位清单、温度实测）。
+- 补齐 **`.gitignore`** / **`.clang-format`** / **`.editorconfig`**；图标与预览图统一进 `assets/`。
+- **成品收进 `bin\`**：`RUNTIME_OUTPUT_DIRECTORY` 指向 `bin`，根目录不再直接躺 exe。
 
 **改进**
 
-- 界面整体缩小到 0.9 倍；客户区宽度收到 **520 逻辑像素**（168 DPI 下窗口 825 × 574，比之前窄约 21 %），六张指标卡随之三等分变窄
-- 静态链接 GCC / C++ 运行库，去掉对 `libgcc_s_seh-1.dll` / `libstdc++-6.dll` 的依赖
+- **SSD 掉盘恢复更快**：缓存盘读失败时**当轮**就退回全盘扫描（原实现要等下一轮，中间有一轮显示 `--`）。
+- **改指标统一走 `SetMetric()`**：原实现双击展开时直接改 `g_metric`，导致回到球形态后提示泡文本仍是旧的；
+  现在提示泡、持久化、重绘一次做齐。
 
-**修正**
+**其它**
 
-- **DPI 缩放取整错误**：`int s = (int)(g_scale + 0.5f)` 让 168 DPI（1.75 倍）被算成 2.0，界面整体放大 14 %。根因是先取整再相乘；改为 `PX(v) = round(v × dpiScale × uiScale)` 的浮点实现。
-- **磁盘温度读不出来**：根因是 `STORAGE_TEMPERATURE_DATA_DESCRIPTOR` 的实际布局与头文件定义不符。带偏移的 hex dump 才看清是 **header 24 字节 + 每项 16 字节**，温度在项内偏移 2；之前按 20 + 16 数，读出来是错的数。
-- **线程数显示成 8/8**：根因是 SMBIOS Type 4 取错了偏移。`0x2C` 是 `Core Enabled 2`（已启用核心数），`0x2E` 才是 `Thread Count 2`（线程数）。
-- **内存类型显示为空**：根因是想当然认为 LPDDR5 的编码是 `0x1F`。实测 `SMBIOSMemoryType = 35 = 0x23`。
-- **内存颗粒型号为空**：根因是 Part Number 的偏移写成了 `0x1C`（那其实是 `Extended Size`）。正确偏移是 `0x1A`。
-- **四条内存插槽分不清**：根因是部分机器的 SMBIOS 里 `Device Locator` 四条全是 `DIMM 0`。改为同时读取 `Bank Locator`（偏移 `0x11`，例如 `P0 CHANNEL A/B/C/D`），检测到 `Device Locator` 重复时自动拼接。
-- **GPU 列表重复**：根因是 `EnumAdapters` 对同一张物理卡返回了多次。改为按名字去重，并改用 `IDXGIFactory1` + `GetDesc1` 以便按 `Flags` 过滤软件渲染适配器。
-- **信息区长文本溢出卡片**：根因是 `TextOutW` 不做裁剪。改用 `DrawTextW` + `DT_END_ELLIPSIS`。
-- **硬件信息最后一行（SMBIOS 版本）不显示**：根因是 `InfoBlockH()` 计算区块高度时漏掉了 `DrawInfo()` 里首行的顶部内边距（`PX(10)`），算出来的区块比内容矮 10 逻辑像素，末行被循环里的 `break` 跳过。改为提取常量 `INFO_TOP`，让高度计算与绘制共用同一个值。
+- 版本号 → **1.1.0.0**（`app.rc` 的 `FILEVERSION` 与 `app.h` 的 `kAppVersion` 同步）；文件夹名按 2 位版本约定为 `HardwareMonitorBall_v1.1`。
+- exe 内嵌信息与 `CopyMath` / `Palette` 对齐：`CompanyName` / `ProductName` = `HardwareMonitorBall`，
+  `FileDescription` = 「极简硬件监视器」。
+
+### v1.0 — 初始版本
+
+- 圆形悬浮球 + 展开面板两种形态，四种指标（CPU 温度 / SSD 温度 / 内存 / CPU 占用）。
+- 环形仪表、按数值分档配色、明暗主题跟随、Per-Monitor V2 高 DPI。
+- 拖拽、置顶、隐藏到托盘、右键菜单、单实例。
+- 位置与开关状态写注册表 `HKCU\Software\HWMonBall`。
+- 手写 `build.bat`（`windres` + 单条 `g++` 命令）。
 
 ## 关于 AI 使用
 
